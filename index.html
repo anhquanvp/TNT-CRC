@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+<script src="https://accounts.google.com/gsi/client?hl=vi" async defer onload="initGoogleLogin()"></script>
 <style>
   :root {
     --ghn-orange: #FF6C0A;
@@ -192,9 +193,27 @@
     .topbar { position: static; }
     .filter-wrap select, .btn { box-shadow: none; }
   }
+
+#loginOverlay{position:fixed;inset:0;background:#0F172A;display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9999;text-align:center;font-family:inherit}
+#loginOverlay .login-title{color:#fff;font-size:18px;font-weight:800;margin-bottom:8px}
+#loginOverlay .login-sub{color:rgba(255,255,255,.6);font-size:13px;margin-bottom:24px}
+#loginOverlay .login-err{color:#FCA5A5;font-size:13px;margin-top:16px;max-width:320px}
+#gsiButtonContainer{display:flex;justify-content:center}
+#userEmailDisplay{font-size:12px;color:var(--text-light,#6B7280);margin-right:8px}
+.btn-logout{background:none;border:1px solid #E5E7EB;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;color:inherit}
+
 </style>
 </head>
 <body>
+
+<div id="loginOverlay" style="display:none">
+  <div class="login-title">📦 Báo cáo Truy thu TNT — GHN</div>
+  <div class="login-sub">Vui lòng đăng nhập bằng email @ghn.vn để truy cập báo cáo</div>
+  <div id="gsiButtonContainer"></div>
+  <div class="login-err" id="loginErrBox"></div>
+</div>
+
+<div id="appContent" style="display:none">
   <div class="topbar">
     <div class="brand">
       <div class="brand-mark">TNT</div>
@@ -208,6 +227,8 @@
       <select id="amFilter" aria-label="Lọc theo AM"></select>
       <div class="top-actions">
         <button class="btn btn-primary" onclick="window.print()">In / PDF</button>
+        <span id="userEmailDisplay"></span>
+        <button class="btn-logout" onclick="doLogout()">Đăng xuất</button>
       </div>
     </div>
   </div>
@@ -737,6 +758,74 @@ document.getElementById('dayPicker').addEventListener('click', e => {
 });
 
 render(sel.value);
+</script>
+</div><!-- /#appContent -->
+
+<script>
+const ALLOWED_DOMAIN = '@ghn.vn';
+const GOOGLE_CLIENT_ID = '96848780552-lqiuph9dquisn0e1rt8vea0h023491lm.apps.googleusercontent.com';
+const FULL_ACCESS_EMAILS = ['quanpv@ghn.vn','doanhnv@ghn.vn','khiempg@ghn.vn'];
+const EMAIL_TO_AM = {
+  'binhpt@ghn.vn': 'Phạm Tiến Bình',
+  'ducbv@ghn.vn': 'Bùi Việt Đức',
+  'tuanlt@ghn.vn': 'Lê Thanh Tuấn',
+  'hoanpn@ghn.vn': 'Phạm Ngọc Hoàn',
+  'sonlv@ghn.vn': 'Lê Văn Sơn',
+  'giapnv1@ghn.vn': 'Nguyễn Văn Giáp',
+  'khanhnt@ghn.vn': 'Nguyễn Tài Khánh',
+  'tuanpt@ghn.vn': 'Phạm Thế Tuấn',
+  'bacpv@ghn.vn': 'Phạm Văn Bắc',
+  'dongpv@ghn.vn': 'Phùng Văn Đồng',
+  'linhph@ghn.vn': 'Phạm Hoài Linh',
+  'linhdh@ghn.vn': 'Đặng Hồng Lĩnh',
+  'anhquan.94vp@gmail.com':'Phan Văn Quân',
+  'duypk@ghn.vn': 'Phạm Khương Duy',
+};
+
+function decodeJwt(token){
+  try{
+    const base64 = token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    const json = decodeURIComponent(atob(base64).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    return JSON.parse(json);
+  }catch(e){ return null; }
+}
+
+function handleGoogleLogin(response){
+  const payload = decodeJwt(response.credential);
+  const errBox = document.getElementById('loginError');
+  errBox.style.display='none';
+  if(!payload || !payload.email){
+    errBox.textContent = 'Không đọc được thông tin tài khoản. Vui lòng thử lại.';
+    errBox.style.display='block';
+    return;
+  }
+  const _emailLower = payload.email.toLowerCase();
+  if(!_emailLower.endsWith(ALLOWED_DOMAIN) && !(_emailLower in EMAIL_TO_AM) && FULL_ACCESS_EMAILS.indexOf(_emailLower)===-1){
+    errBox.textContent = 'Tài khoản "'+payload.email+'" không có quyền truy cập báo cáo này.';
+    errBox.style.display='block';
+    google.accounts.id.disableAutoSelect();
+    return;
+  }
+  document.getElementById('loginOverlay').style.display='none';
+  document.getElementById('appContent').style.display='';
+  window.CURRENT_USER_EMAIL = payload.email.toLowerCase();
+  window.IS_FULL_ACCESS = FULL_ACCESS_EMAILS.includes(window.CURRENT_USER_EMAIL);
+  window.MY_AM_NAME = EMAIL_TO_AM[window.CURRENT_USER_EMAIL] || null;
+  window.CURRENT_ID_TOKEN = response.credential;
+  var uEl = document.getElementById('userEmailDisplay');
+if(uEl) uEl.textContent = '👤 '+payload.email;
+}
+
+function doLogout(){
+  if(window.google && google.accounts) google.accounts.id.disableAutoSelect();
+  location.reload();
+}
+
+function initGoogleLogin(){
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleLogin });
+  google.accounts.id.renderButton(document.getElementById('gsiButtonContainer'), { theme:'filled_blue', size:'large', text:'signin_with', shape:'pill' });
+  google.accounts.id.prompt();
+}
 </script>
 </body>
 </html>
